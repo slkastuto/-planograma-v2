@@ -1,0 +1,14 @@
+<% layout('layout', { title: 'Entrar', user: null }) %>
+<section class="card narrow">
+  <h2>Entrar</h2>
+  <% if (error) { %><div class="alert error"><%= error %></div><% } %>
+  <form method="post" action="/login">
+    <label>Email
+      <input type="email" name="email" required>
+    </label>
+    <label>Senha
+      <input type="password" name="senha" required>
+    </label>
+    <button class="btn primary" type="submit">Entrar</button>
+  </form>
+</section>

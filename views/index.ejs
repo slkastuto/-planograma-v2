@@ -1,0 +1,6 @@
+<% layout('layout', { title: 'Início', user }) %>
+<section class="card">
+  <h2>Bem-vindo(a), <%= user.nome %></h2>
+  <p>Loja atual: <strong><%= (user.lojas || []).find(l => l.id_loja===user.id_loja)?.nome || '—' %></strong></p>
+  <p>Aqui depois entram os cards/relatórios.</p>
+</section>

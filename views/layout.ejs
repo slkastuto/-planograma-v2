@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-br">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title><%= title || 'Planograma v2' %></title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Planograma v2</div>
+    <div class="actions">
+      <% if (user) { %>
+        <form action="/trocar-loja" method="post" class="inline">
+          <select name="id_loja" onchange="this.form.submit()">
+            <% (user.lojas || []).forEach(l => { %>
+              <option value="<%= l.id_loja %>" <%= user.id_loja===l.id_loja?'selected':'' %>><%= l.nome %></option>
+            <% }) %>
+          </select>
+        </form>
+        <form action="/logout" method="post" class="inline">
+          <button type="submit">Sair</button>
+        </form>
+      <% } %>
+    </div>
+  </header>
+  <main class="container">
+    <%- body %>
+  </main>
+</body>
+</html>
