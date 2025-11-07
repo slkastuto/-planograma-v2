@@ -1,105 +1,105 @@
-import 'dotenv/config';
-import express from 'express';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import session from 'express-session';
-import mysql from 'mysql2/promise';
-import bcrypt from 'bcryptjs';
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import engine from "ejs-mate";
+import session from "express-session";
+// opcional para depois: import mysql from "mysql2/promise";
+// import bcrypt from "bcryptjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = path.dirname(__filename);
 
 const app  = express();
-const PORT = process.env.PORT || 8081;
+const PORT = process.env.PORT || 8082;
 
-// DB pool
-const pool = await mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'planouser',
-  password: process.env.DB_PASS || 'senhaSegura123',
-  database: process.env.DB_NAME || 'planograma_v2',
-  waitForConnections: true,
-  connectionLimit: 10,
+/* ----------------------- View engine (ejs-mate) ----------------------- */
+app.engine("ejs", engine);
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
+/* ---------------------------- Middlewares ----------------------------- */
+app.use(express.urlencoded({ extended: true }));
+app.use(express.json());
+app.use("/static",  express.static(path.join(__dirname, "public")));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+/* ------------------------------- Sessão ------------------------------- */
+app.use(
+  session({
+    name: "plano.sid",
+    secret: process.env.SESSION_SECRET || "dev-secret-planograma",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 1000 * 60 * 60 * 8, // 8h
+    },
+  })
+);
+
+/* -------------------- Variáveis disponíveis no EJS -------------------- */
+app.use((req, res, next) => {
+  res.locals.user  = req.session.user || null;
+  res.locals.title = "Planograma v2";
+  next();
 });
 
-// middlewares
-app.use(express.urlencoded({ extended: true, limit: '25mb' }));
-app.use(express.json());
-app.use('/static', express.static(path.join(__dirname, 'public')));
-
-// sessões
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'trocar-por-uma-chave-forte',
-  resave: false,
-  saveUninitialized: false,
-}));
-
-// ejs
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
-
-// --- Helpers simples de auth
-function ensureAuth(req, res, next){
-  if (req.session.user) return next();
-  res.redirect('/login');
+/* ---------------------------- Helpers simples ------------------------- */
+function requireAuth(req, res, next) {
+  if (!req.session.user) return res.redirect("/login");
+  next();
 }
 
-// --- Rotas de login/logout
-app.get('/login', (req,res) => {
-  res.render('login', { error: null });
+/* -------------------------------- Rotas ------------------------------- */
+
+// Home (somente logado)
+app.get("/", requireAuth, (req, res) => {
+  res.render("home", {
+    // você pode criar views/home.ejs depois; por agora,
+    // vamos usar o layout e um conteúdo mínimo inline:
+    // se não existir views/home.ejs, descomente o render abaixo:
+    // string template:
+    // dica: crie um views/home.ejs e mude aqui para res.render("home")
+    // mas para não travar, vamos renderizar uma página simples com layout:
+  });
 });
 
-app.post('/login', async (req,res) => {
-  const { email, senha } = req.body;
-  try {
-    const [rows] = await pool.query('SELECT * FROM usuarios WHERE email=? AND status="aprovado" LIMIT 1', [email]);
-    if (!rows.length) return res.render('login', { error: 'Usuário não encontrado ou não aprovado.' });
-    const u = rows[0];
-    const ok = await bcrypt.compare(senha, u.senha_hash);
-    if (!ok) return res.render('login', { error: 'Senha inválida.' });
+// Login (GET)
+app.get("/login", (req, res) => {
+  if (req.session.user) return res.redirect("/");
+  res.render("login", { error: null });
+});
 
-    // permissões/loja padrão
-    const [loj] = await pool.query(
-      'SELECT l.* FROM usuarios_lojas ul JOIN lojas l ON l.id_loja=ul.id_loja WHERE ul.id_usuario=? ORDER BY l.nome',
-      [u.id_usuario]
-    );
+// Login (POST) – por enquanto permite qualquer usuário/senha (modo dev)
+// Depois você troca pelo SELECT no MySQL + bcrypt.
+app.post("/login", (req, res) => {
+  const { username, password } = req.body;
 
-    req.session.user = {
-      id: u.id_usuario,
-      nome: u.nome,
-      email: u.email,
-      perfil: u.perfil,
-      lojas: loj,
-      id_loja: u.id_loja_padrao || (loj[0]?.id_loja ?? null)
-    };
-    res.redirect('/');
-  } catch (e) {
-    console.error(e);
-    res.render('login', { error: 'Erro ao autenticar.' });
+  // validação mínima
+  if (!username || !password) {
+    return res.status(400).render("login", { error: "Informe usuário e senha." });
   }
+
+  // MODO DEV: autentica sempre
+  req.session.user = { id: 1, username };
+  return res.redirect("/");
 });
 
-app.post('/logout', (req,res) => {
-  req.session.destroy(() => res.redirect('/login'));
+// Logout
+app.get("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie("plano.sid");
+    res.redirect("/login");
+  });
 });
 
-// troca de loja (apenas se tiver acesso)
-app.post('/trocar-loja', ensureAuth, (req,res) => {
-  const id = Number(req.body.id_loja);
-  if (req.session.user.lojas?.some(l => l.id_loja === id)) {
-    req.session.user.id_loja = id;
-  }
-  res.redirect('/');
+/* --------------------------- Fallback 404 ----------------------------- */
+app.use((req, res) => {
+  res.status(404).render("login", { error: "Página não encontrada." });
 });
 
-// --- Home (placeholder)
-app.get('/', ensureAuth, async (req,res) => {
-  // Mostra só um oi e a loja atual; depois substituímos pelos cards/relatórios.
-  res.render('index', { user: req.session.user });
+/* ---------------------------- Start server ---------------------------- */
+app.listen(PORT, () => {
+  console.log(`✔ Planograma v2 rodando em :${PORT}`);
 });
-
-// 404
-app.use((req,res)=> res.status(404).send('404'));
-
-// start
-app.listen(PORT, () => console.log(`✔ Planograma v2 rodando em :${PORT}`));
